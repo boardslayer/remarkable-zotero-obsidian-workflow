@@ -131,6 +131,32 @@ converting, from rmscene meeting blocks written by a newer firmware than it
 knows about. These are noise: highlights come through and import into Zotero
 correctly with those warnings present.
 
+## Sending a single paper from the file manager
+
+Pushing with `--push` sends everything the tablet lacks. To send one file, the
+`nautilus/` directory holds a [nautilus-python](https://github.com/GNOME/nautilus-python)
+extension that adds *Send to reMarkable* to the right-click menu of PDF, EPUB
+and `.rmdoc` files. It runs `rmapi put` in the background and reports the
+result as a desktop notification.
+
+```sh
+sudo pacman -S python-nautilus          # Arch; the package is nautilus-python elsewhere
+mkdir -p ~/.local/share/nautilus-python/extensions
+ln -s "$PWD/nautilus/remarkable.py" ~/.local/share/nautilus-python/extensions/
+nautilus -q                             # extensions are only scanned at startup
+```
+
+The tablet folder is `$RM_DEST`, as for the sync script. Nautilus inherits the
+session environment rather than a shell's, so set it in
+`~/.config/environment.d/remarkable.conf` (`RM_DEST=/Papers`) and log in again.
+
+A document that already exists on the tablet is refused rather than replaced.
+That is deliberate: after a sync the local copy carries the annotations, and
+uploading it would make the annotated file the tablet's original. Send a paper
+from the ZotMoov folder if you want its highlights to come back through the
+sync; a file from anywhere else still uploads, but the sync will report it as
+unmatched.
+
 ## Running it automatically
 
 Nothing local changes when you highlight something on the tablet, and rmapi has
