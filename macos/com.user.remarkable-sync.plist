@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs the sync hourly as a LaunchAgent. launchd expands neither ~ nor $HOME,
+  so every path below is absolute. Install:
+
+    cp macos/com.user.remarkable-sync.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.remarkable-sync.plist
+    launchctl kickstart -k gui/$(id -u)/com.user.remarkable-sync   # run once now
+    tail -f ~/Library/Logs/remarkable-sync.log
+
+  Remove:
+    launchctl bootout gui/$(id -u)/com.user.remarkable-sync
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.remarkable-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>python3</string>
+        <string>/Users/priyansh/Developer/remarkable-zotero-obsidian-workflow/scripts/remarkable_zotero_sync.py</string>
+        <string>--install</string>
+        <!-- Deliberately no push flag: that uploads every paper the tablet
+             lacks, so run it by hand when you mean it. -->
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd's PATH has neither ~/go/bin (rmapi) nor Homebrew. -->
+        <key>PATH</key>
+        <string>/Users/priyansh/go/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>ZOTERO_LINKED_DIR</key>
+        <string>/Users/priyansh/papers</string>
+        <key>REMARKS_CMD</key>
+        <string>/Users/priyansh/src/remarks/.venv/bin/remarks</string>
+        <key>RM_FOLDER</key>
+        <string>/Papers</string>
+    </dict>
+
+    <!-- A missed interval runs once on wake. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/priyansh/Library/Logs/remarkable-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/priyansh/Library/Logs/remarkable-sync.log</string>
+</dict>
+</plist>

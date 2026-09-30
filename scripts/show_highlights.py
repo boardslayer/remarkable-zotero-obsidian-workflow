@@ -8,7 +8,7 @@ nothing for Zotero to import.
 
 Run it against the converted PDFs before they are installed:
 
-    ./scripts/show_highlights.py ~/.cache/remarkable-zotero-sync/out
+    ./scripts/show_highlights.py ~/Library/Caches/remarkable-zotero-sync/out
 
 or against anything else, including a whole directory:
 

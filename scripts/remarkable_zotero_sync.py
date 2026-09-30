@@ -4,10 +4,8 @@ highlights to Zotero as real PDF annotations.
 
     rmapi -> .rmdoc bundles -> remarks -> Zotero's linked attachment
 
-The reMarkable Google Drive export flattens annotations into the page, so no
-amount of post-processing recovers the highlighted text from it. The cloud
-bundles still carry the v6 .rm scene data that remarks reads, which is why
-this takes the long way round instead of reusing the Drive copy.
+The cloud bundles carry the .rm scene data remarks needs to turn highlights
+into real PDF annotations; any flattened export has already lost it.
 
 Prerequisites, both already set up and authenticated:
 
@@ -18,8 +16,8 @@ Prerequisites, both already set up and authenticated:
 Nothing is written into your library unless you pass --install. Without it the
 script downloads, converts, and reports what it would replace.
 
-  ./remarkable_zotero_sync.py --rm-folder /Zotero --zotero-dir ~/google-drive
-  ./remarkable_zotero_sync.py --rm-folder /Zotero --zotero-dir ~/google-drive --install
+  ./remarkable_zotero_sync.py --rm-folder /Papers --zotero-dir ~/papers
+  ./remarkable_zotero_sync.py --rm-folder /Papers --zotero-dir ~/papers --install
 """
 
 import argparse
@@ -30,11 +28,26 @@ import shlex
 import shutil
 import subprocess
 import sys
+import unicodedata
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 SUFFIX = " _remarks.pdf"  # what remarks appends to each converted document
+
+
+def nfc(name):
+    """Normalise a document name before it is used as a matching key.
+
+    macOS filesystems can hand back names in decomposed form (NFD), so an
+    accented author name in a library file will not compare equal to the same
+    name as the reMarkable cloud stores it (NFC) unless both are normalised.
+    """
+    return unicodedata.normalize("NFC", name)
+
+
+def stem_of(bundle):
+    return nfc(bundle.stem)
 
 
 def parse_args():
@@ -51,11 +64,11 @@ def parse_args():
         "--zotero-dir",
         default=os.environ.get("ZOTERO_LINKED_DIR"),
         required="ZOTERO_LINKED_DIR" not in os.environ,
-        help="Zotero's Linked Attachment Base Directory, i.e. the Google Drive mount",
+        help="Zotero's Linked Attachment Base Directory (the ZotMoov folder)",
     )
     parser.add_argument(
         "--work-dir",
-        default=os.environ.get("RM_WORK_DIR", "~/.cache/remarkable-zotero-sync"),
+        default=os.environ.get("RM_WORK_DIR", "~/Library/Caches/remarkable-zotero-sync"),
         help="Scratch space for downloads and conversions (default: %(default)s)",
     )
     parser.add_argument(
@@ -145,7 +158,7 @@ def download_bundles(rm_folder, dest):
 
     by_name = {}
     for bundle in kept:
-        by_name.setdefault(bundle.stem, []).append(bundle)
+        by_name.setdefault(stem_of(bundle), []).append(bundle)
 
     # Everything downstream is keyed by document name: remarks names its
     # output after it, and the library lookup matches on it. Two documents
@@ -161,7 +174,7 @@ def download_bundles(rm_folder, dest):
 
     # Every name the tablet holds, including the ones ignored above, so that
     # pushing does not re-upload a paper that is merely ambiguous or deleted.
-    on_device = {bundle.stem for bundle in kept + trashed}
+    on_device = {stem_of(bundle) for bundle in kept + trashed}
 
     return bundles, on_device
 
@@ -187,15 +200,8 @@ def convert(remarks_cmd, xochitl_dir, out_dir):
 def index_library(zotero_dir):
     """Index every PDF in the library by name, in one pass.
 
-    Walked rather than globbed per document, for two reasons. Hidden
-    directories have to be pruned as the walk descends: Google Drive keeps
-    deleted files in .Trash, where a paper you threw away still carries the
-    exact name of the one you kept, and writing annotations into the trashed
-    copy would look like success while the real attachment went untouched.
-
-    The other reason is cost. A library on a FUSE-mounted cloud drive turns
-    every directory into a network round trip, so the walk happens once and
-    is answered from memory after that.
+    Hidden directories are pruned so a stray copy in something like .Trash
+    can never be the file that gets overwritten.
 
     The reMarkable document name is the filename ZotMoov created, minus the
     extension, which is what makes matching on the name possible at all.
@@ -207,7 +213,7 @@ def index_library(zotero_dir):
         for name in files:
             path = Path(root) / name
             if name.endswith(".pdf") and not name.startswith(".") and path.is_file():
-                index.setdefault(name[: -len(".pdf")], []).append(path)
+                index.setdefault(nfc(name[: -len(".pdf")]), []).append(path)
     print(f"  {len(index)} PDF(s)")
     return index
 
@@ -301,7 +307,7 @@ def main():
     # Hash the source bundle rather than the converted PDF: the question is
     # whether the annotations changed, not whether remarks renders identically
     # between versions.
-    fingerprints = {bundle.stem: fingerprint(bundle) for bundle in bundles}
+    fingerprints = {stem_of(bundle): fingerprint(bundle) for bundle in bundles}
     library = index_library(zotero_dir)
 
     # Decide what is worth converting before converting it. Notebooks and the
@@ -311,7 +317,7 @@ def main():
     pending, skipped, missing, ambiguous = [], [], [], []
 
     for bundle in bundles:
-        stem = bundle.stem
+        stem = stem_of(bundle)
         if state.get(stem, {}).get("bundle_sha256") == fingerprints[stem]:
             skipped.append(stem)
             continue
@@ -347,19 +353,19 @@ def main():
         fresh_dir(out_dir)
         unpack([bundle for bundle, _ in pending], xochitl_dir)
         produced = {
-            pdf.name[: -len(SUFFIX)]: pdf
+            nfc(pdf.name[: -len(SUFFIX)]): pdf
             for pdf in convert(args.remarks_cmd, xochitl_dir, out_dir)
         }
         for bundle, target in pending:
-            pdf = produced.get(bundle.stem)
+            pdf = produced.get(stem_of(bundle))
             if pdf is None:
                 # remarks names its output from the document's visibleName,
                 # which should equal the name rmapi gave the bundle. Say so if
                 # it did not, rather than reporting a document as synced that
                 # never converted.
-                print(f"  ? {bundle.stem}: remarks produced no output")
+                print(f"  ? {stem_of(bundle)}: remarks produced no output")
                 continue
-            changed.append((bundle.stem, pdf, target))
+            changed.append((stem_of(bundle), pdf, target))
 
     if changed:
         print(f"\n{'Installing' if args.install else 'Would install'} {len(changed)} document(s):")

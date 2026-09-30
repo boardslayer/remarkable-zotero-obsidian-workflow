@@ -1,226 +1,142 @@
-# reMarkable + Zotero + Obsidian Workflow
+# reMarkable + Zotero + Obsidian workflow (macOS)
 
-Notes on how I move papers between Zotero and my reMarkable, and how the
-highlights I make while reading get back into Zotero as real annotations.
-
-Everything runs over reMarkable's own cloud via [rmapi](https://github.com/ddvk/rmapi).
-There is no Google Drive in this workflow. The device's Drive export flattens
-annotations into the page, so the highlighted text is gone before the file
-leaves the tablet; the cloud bundles still carry the scene data it came from.
+Move papers from Zotero to a reMarkable, and bring the highlights made on the
+tablet back into Zotero as real annotations.
 
 ```
-Zotero + ZotMoov  ->  a local folder
+Zotero + ZotMoov  ->  ~/papers
       |  rmapi put
       v
-reMarkable cloud  ->  tablet, read and annotate
+reMarkable cloud  ->  read and highlight on the tablet
       |  rmapi get
       v
      remarks  ->  PDF with real highlight annotations
       |
       v
-same local folder  ->  Zotero: File -> Import Annotations
+~/papers  ->  Zotero: File -> Import Annotations
 ```
 
-## Coming from the Google Drive setup
-
-Delete the Apps Script trigger first, at <https://script.google.com> under
-Triggers. That script trashed the unannotated original before renaming the
-annotated copy over it, so any run that failed between those two steps left the
-file in Drive's trash with nothing live carrying its name, and Zotero reporting
-the attachment as missing. On an hourly trigger it keeps getting chances.
-
-Then restore what it took, from Drive's own trash at <https://drive.google.com>
-rather than through the mount. To find the casualties, list trashed PDFs that
-have no live counterpart:
-
-```sh
-comm -23 <(basename -a ~/google-drive/.Trash/*.pdf | sort -u) \
-         <(basename -a ~/google-drive/zotero/*.pdf | sort -u)
-```
-
-Once the library is a local folder, none of this applies any more.
+Everything goes through reMarkable's cloud via rmapi. Exports that flatten
+annotations into the page lose the highlighted text, so they are not used.
 
 ## Setup
 
 ### Zotero
 
-1. Open Edit -> Settings
-2. Go to the `Sync` tab and check `Sync automatically`
-3. Go to the `Advanced` tab
-4. Set `Data Directory Location` to a local path (e.g. `~/Zotero`)
-5. Set `Linked Attachment Base Directory` to the folder your papers will live
-   in (e.g. `~/papers`)
+1. Zotero -> Settings (⌘,)
+2. `Sync`: check `Sync automatically`
+3. `Advanced` -> `Files and Folders`: set `Linked Attachment Base Directory`
+   to `~/papers`
+
+Keep this folder outside Documents, Desktop and iCloud Drive. macOS blocks
+background jobs from those without Full Disk Access, and iCloud's
+"Optimize Mac Storage" replaces files with placeholders the sync cannot use.
 
 ### ZotMoov
 
-[ZotMoov](https://github.com/wileyyugioh/zotmoov) is what gives you a flat
-folder of predictably named PDFs, which is what makes matching a document on
-the tablet back to a library item possible at all.
+[ZotMoov](https://github.com/wileyyugioh/zotmoov) keeps a flat folder of
+predictably named PDFs, which is what lets a tablet document be matched back
+to a library item.
 
 1. Install ZotMoov
-2. Open Edit -> Settings, go to the `ZotMoov` tab
-3. Set the destination directory to the same folder as the
-   `Linked Attachment Base Directory` above
-4. Check `Automatically Move/Copy Files When Added`
+2. Zotero -> Settings -> `ZotMoov`: set the destination to `~/papers`
+3. Check `Automatically Move/Copy Files When Added`
 
 ### rmapi
 
-Use the [ddvk fork](https://github.com/ddvk/rmapi). The original `juruen/rmapi`
-is archived and no longer works with the current cloud.
+Use the [ddvk fork](https://github.com/ddvk/rmapi); `juruen/rmapi` is archived.
 
-Pair it once. Generate a code at
-<https://my.remarkable.com/device/browser/connect> — it must be exactly 8
-characters — and run `rmapi ls`, which prompts for it. Tokens are saved to
-`~/.config/rmapi/rmapi.conf` and refresh on their own after that.
+```
+brew install go
+go install github.com/ddvk/rmapi@latest     # installs to ~/go/bin
+```
+
+Pair it once: get an 8-character code from
+<https://my.remarkable.com/device/browser/connect> and run `rmapi ls`. The
+token is saved in `~/.config/rmapi/rmapi.conf`; it grants full access to your
+reMarkable account, so keep it `chmod 600` and out of backups and dotfiles.
 
 ### remarks
 
-Use the [Scrybbling-together fork](https://github.com/Scrybbling-together/remarks).
-Upstream `lucasrla/remarks` stops at reMarkable software 2.15 and cannot read
-anything annotated on 3.0 or later.
+Use the [Scrybbling-together fork](https://github.com/Scrybbling-together/remarks);
+upstream cannot read firmware 3.0 or later. It must be installed with poetry,
+not pip:
 
-It cannot be installed with pip: it pins `rmscene` to a commit while its own
-dependency `rmc` asks for the branch, and pip rejects two direct references to
-one package. Use poetry, as the project documents:
-
-```sh
+```
+brew install poetry
 git clone https://github.com/Scrybbling-together/remarks.git ~/src/remarks
 cd ~/src/remarks
 poetry config virtualenvs.in-project true --local
 poetry install
-ln -s ~/src/remarks/.venv/bin/remarks ~/.local/bin/remarks
+mkdir -p ~/.local/bin && ln -s ~/src/remarks/.venv/bin/remarks ~/.local/bin/remarks
+remarks --version
 ```
-
-The in-project virtualenv keeps the path stable, so the symlink survives the
-venv being rebuilt. Check it with `remarks --version`.
 
 ## Syncing
 
-```sh
-./scripts/remarkable_zotero_sync.py --zotero-dir ~/papers            # report only
-./scripts/remarkable_zotero_sync.py --zotero-dir ~/papers --install  # apply
+```
+./scripts/remarkable_zotero_sync.py --zotero-dir ~/papers --rm-folder /Papers            # report only
+./scripts/remarkable_zotero_sync.py --zotero-dir ~/papers --rm-folder /Papers --install  # apply
 ```
 
-Add `--push` to also send papers the tablet does not have yet. Every option has
-an environment variable (`ZOTERO_LINKED_DIR`, `RM_FOLDER`, `RM_DEST`,
-`RM_WORK_DIR`, `REMARKS_CMD`), so a cron entry needs no arguments.
+Nothing is written without `--install`. Add `--push` to also upload library
+papers the tablet does not have yet. Options can be set through
+`ZOTERO_LINKED_DIR`, `RM_FOLDER`, `RM_DEST`, `RM_WORK_DIR` and `REMARKS_CMD`.
 
-Point `--zotero-dir` at the folder ZotMoov writes to, not at a parent of it.
-The whole tree is walked to build the name index, and a large tree on a network
-filesystem makes that slow.
-
-Nothing is written without `--install`. A plain run downloads, converts, and
-reports what it would change.
+Limit `--rm-folder` to the folder your papers live in. Otherwise every
+notebook on the tablet is downloaded and cached in
+`~/Library/Caches/remarkable-zotero-sync`.
 
 After a sync, open each listed item in Zotero and use
-`File -> Import Annotations`.
+`File -> Import Annotations`. Back up `~/papers` before the first `--install`.
 
-To check that the round trip actually produced annotations Zotero can read,
-before or after installing them:
+To check the converted PDFs carry importable highlights:
 
-```sh
+```
 "$(dirname "$(readlink -f "$(command -v remarks)")")/python" \
-  scripts/show_highlights.py ~/.cache/remarkable-zotero-sync/out
+  scripts/show_highlights.py ~/Library/Caches/remarkable-zotero-sync/out
 ```
 
-It lists every highlight annotation and the text underneath it. A file that
-looks highlighted but reports zero has nothing for Zotero to import.
+remarks warnings such as `Some data has not been read` are harmless.
 
-remarks logs `Some data has not been read` and `only read N bytes` while
-converting, from rmscene meeting blocks written by a newer firmware than it
-knows about. These are noise: highlights come through and import into Zotero
-correctly with those warnings present.
+## Running it hourly
 
-## Sending a single paper from the file manager
+`macos/com.user.remarkable-sync.plist` is a LaunchAgent. Check the paths in
+it, then:
 
-Pushing with `--push` sends everything the tablet lacks. To send one file, the
-`nautilus/` directory holds a [nautilus-python](https://github.com/GNOME/nautilus-python)
-extension that adds *Send to reMarkable* to the right-click menu of PDF, EPUB
-and `.rmdoc` files. It runs `rmapi put` in the background and reports the
-result as a desktop notification.
-
-```sh
-sudo pacman -S python-nautilus          # Arch; the package is nautilus-python elsewhere
-mkdir -p ~/.local/share/nautilus-python/extensions
-ln -s "$PWD/nautilus/remarkable.py" ~/.local/share/nautilus-python/extensions/
-nautilus -q                             # extensions are only scanned at startup
+```
+cp macos/com.user.remarkable-sync.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.remarkable-sync.plist
+tail -f ~/Library/Logs/remarkable-sync.log
 ```
 
-The tablet folder is `$RM_DEST`, as for the sync script. Nautilus inherits the
-session environment rather than a shell's, so set it in
-`~/.config/environment.d/remarkable.conf` (`RM_DEST=/Papers`) and log in again.
+Stop it with `launchctl bootout gui/$(id -u)/com.user.remarkable-sync`. It
+never passes `--push`, and only runs while you are logged in.
 
-A document that already exists on the tablet is refused rather than replaced.
-That is deliberate: after a sync the local copy carries the annotations, and
-uploading it would make the annotated file the tablet's original. Send a paper
-from the ZotMoov folder if you want its highlights to come back through the
-sync; a file from anywhere else still uploads, but the sync will report it as
-unmatched.
+## Send to reMarkable from Finder
 
-## Running it automatically
+`macos/send-to-remarkable.sh` becomes a right-click Quick Action:
 
-Nothing local changes when you highlight something on the tablet, and rmapi has
-no notification support, so the pull direction has to poll. A user timer:
+1. Automator -> New Document -> Quick Action
+2. Workflow receives `files or folders` in `Finder`
+3. Add `Run Shell Script`, shell `/bin/zsh`, pass input `as arguments`, with:
+   `exec ~/Developer/remarkable-zotero-obsidian-workflow/macos/send-to-remarkable.sh "$@"`
+4. Save as "Send to reMarkable"
 
-```sh
-mkdir -p ~/.config/systemd/user
-cp systemd/remarkable-sync.{service,timer} ~/.config/systemd/user/
-# edit the three paths in the .service first
-systemctl --user daemon-reload
-systemctl --user enable --now remarkable-sync.timer
-```
-
-```sh
-systemctl --user list-timers remarkable-sync.timer   # when it next fires
-journalctl --user -u remarkable-sync -f              # what it did
-```
-
-Run `sudo loginctl enable-linger $USER` if it should also run while you are
-logged out.
-
-The unit deliberately does not pass `--push`. Pushing uploads every library
-paper the tablet does not already have, which on a full library means hundreds
-of documents in one go, so run that by hand when you actually mean to.
-
-Each run downloads the whole device. That is fine for a handful of documents;
-if the tablet's library grows enough for hourly full downloads to hurt, the fix
-is to list first and fetch only what changed — `rmapi stat` reports a `Version`
-and `ModifiedClient` per document.
+It uploads PDFs, EPUBs and `.rmdoc` files to `$RM_DEST` (default `/Papers`)
+and never replaces a document already on the tablet. Send papers from
+`~/papers` if you want their highlights to come back through the sync.
 
 ## Known limitations
 
-**Importing is manual, and re-importing duplicates.** Both follow from the
-annotations travelling inside the PDF. A PDF carries every highlight it has
-with no identity per highlight, so Zotero cannot tell which ones it imported
-before and re-imports all of them; and the import itself is a reader menu
-action, so it cannot be scripted. Delete an item's existing Zotero annotations
-before re-importing it.
-
-Writing the highlights into Zotero directly would fix both, and drop the need
-to overwrite library files at all — the rectangles and text are already in hand
-by the time remarks renders them. There is no supported way to do it today.
-Annotations appear nowhere in the Zotero Web API v3 documentation, and the
-local API is read-only ("Write requests are currently unsupported. Only `GET`
-is accepted."), with write support listed as coming in a future version. The
-annotation fields are known from community sources and creating them may well
-work against undocumented behaviour, but that is a different proposition from
-a supported route. Worth revisiting when local API writes ship.
-
-**Handwriting stays flat.** remarks renders scribbles onto the page rather than
-as annotation objects. They are visible in the PDF but Zotero cannot do
-anything with them. Only text highlights become real annotations.
-
-**Matching is by filename.** A document is matched to a library item by name.
-Two library files sharing a name, or a name that changed on one side, are
-reported and skipped rather than guessed at.
-
-**rmapi is unofficial.** It speaks a private API, and `juruen/rmapi` is archived
-precisely because reMarkable moved that API. The ddvk fork is maintained, but a
-firmware update can break this in a way the vendor-supported paths would not.
+- **Import is manual, and re-importing duplicates.** Delete an item's existing
+  Zotero annotations before importing it again.
+- **Handwriting stays flat.** Only text highlights become annotations.
+- **Matching is by filename.** Duplicate or renamed names are reported and skipped.
+- **rmapi is unofficial.** A firmware update can break it.
 
 ## Obsidian
 
-remarks also writes Obsidian-compatible markdown of the extracted highlights
-next to each converted PDF, under the sync script's work directory
-(`~/.cache/remarkable-zotero-sync/out` by default). Nothing currently moves
-those into a vault — that part of the workflow is not built yet.
+remarks also writes markdown of the highlights next to each converted PDF.
+Nothing moves it into a vault yet; an Obsidian Zotero plugin that reads
+annotations from Zotero is the simpler route.
